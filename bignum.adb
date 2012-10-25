@@ -87,7 +87,7 @@ package body bignum is
       o : integer;
    begin
       -- verify s
-      -- FIXME
+      -- FIXME raise exception if s contains other characters
       for i in  s'Range loop
          case s(i) is
             when '0'..'9' | 'a'..'f' =>
@@ -98,7 +98,7 @@ package body bignum is
                -- when '_' => -- ignore all '_'
                --   null;
             when others =>
-               return n;
+               ss(i) := '0';
          end case;
       end loop;
 
@@ -107,11 +107,6 @@ package body bignum is
       l := (ss'length-1) / 8 + 1;
       o := ss'length mod 8;
       initialize(n);
-      -- Note: abc2412445 => 1b_c241_2445
-      --             order   12 3456 789a
-      -- convert every 8 characters into one limb
-      -- n(1) := limb'value("789a")
-      -- n(2) := limb'value("3456")
       grow(n,l);
       for i in n.data'range loop
          if i = n.data'last then
@@ -131,7 +126,12 @@ package body bignum is
       if n.data = null then
          ada.text_io.put("null");
       else
-         ada.text_io.put("["& to_string(n, 16)&"]");
+         if n.sign then
+            ada.text_io.put("[");
+         else
+            ada.text_io.put("[-");
+         end if;
+         ada.text_io.put(to_string(n, 16)&"]");
       end if;
    end put;
 
@@ -380,4 +380,33 @@ package body bignum is
    begin
       return false;
    end "=";
+   function ">" (l, r: in mpi) return boolean is
+      b : integer := 0;
+   begin
+      if l.sign and not r.sign then return true; end if;
+      if r.sign and not l.sign then return false; end if;
+      -- same sign
+      -- check if l.data > r.data
+      if l.ends > r.ends then
+         b := 1;
+      elsif l.ends = r.ends then
+         for i in reverse 1..l.ends loop
+            if l.data(i) /=  r.data(i) then
+               if l.data(i) > r.data(i) then
+                  b := 1;
+               elsif l.data(i) < r.data(i) then
+                  b := -1;
+               end if;
+               exit;
+            end if;
+         end loop;
+      else
+         b := -1;
+      end if;
+      if (l.sign and b = 1) or (not l.sign and  b /= 1) then
+         return true;
+      else
+         return false;
+      end if;
+   end ">";
 end bignum;
