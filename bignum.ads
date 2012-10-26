@@ -45,6 +45,7 @@ package bignum is
    function "=" (l, r: in mpi) return boolean;
    function ">" (l, r: in mpi) return boolean;
    procedure put(n : in mpi; r : in integer);
+   oom : exception;
    -------------
    -- PRIVATE --
    -------------
