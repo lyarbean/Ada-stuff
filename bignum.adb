@@ -426,11 +426,6 @@ package body bignum is
       with sign=> true, ends=>ends,data=>data);
    end square;
 
-   function absolute (n: in mpi) return mpi is
-   begin
-      return null_mpi;
-   end absolute;
-
    function modulo (l, r: in mpi) return mpi is
    begin
       return null_mpi;

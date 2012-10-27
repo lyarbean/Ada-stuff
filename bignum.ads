@@ -17,7 +17,6 @@ package bignum is
    function "*" (l, r: in mpi) return mpi;
    function "/" (l, r: in mpi) return mpi;
    function square(n : in mpi) return mpi;
-   function absolute (n: in mpi) return mpi;
    function modulo (l, r: in mpi) return mpi;
 
    -- procedure exp_mod
