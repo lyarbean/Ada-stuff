@@ -356,22 +356,26 @@ package body bignum is
 
    function "*" (l, r: in mpi) return mpi is
       prod : interfaces.unsigned_64;
-      carry : interfaces.unsigned_64 := 0;
+      carry : interfaces.unsigned_64;
       data : limbs_access;
       ends : integer;
    begin
-      data := new limbs(1..l.ends+r.ends+1);
+      data := new limbs(1..l.ends+r.ends);
       if data = null then raise oom; end if;
+      data.all := (others=>0);
       for i in 1..l.ends loop
+         carry := 0;
          for j in 1..r.ends loop
             prod := carry +
+            interfaces.unsigned_64(data(i+j-1)) +
             interfaces.unsigned_64(l.data(i)) *
             interfaces.unsigned_64(r.data(j));
             data(i+j-1) := limb(prod mod 2**32);
             carry := prod / 2**32;
          end loop;
+         data(i+r.ends) := limb(carry);
       end loop;
-      data(l.ends+r.ends+1) := limb(carry);
+
       for i in reverse data'range loop
          if data(i) /= 0 then
             ends := i;
@@ -395,6 +399,7 @@ package body bignum is
    begin
       data := new limbs(1..n.ends*2);
       if data = null then raise oom; end if;
+      data.all := (others=>0);
       for i in 1..n.ends loop
          prod := carry +
          interfaces.unsigned_64(n.data(i)) *
@@ -420,6 +425,7 @@ package body bignum is
       return (Ada.Finalization.Controlled
       with sign=> true, ends=>ends,data=>data);
    end square;
+
    function absolute (n: in mpi) return mpi is
    begin
       return null_mpi;
