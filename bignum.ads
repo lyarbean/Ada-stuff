@@ -16,6 +16,7 @@ package bignum is
    function "-" (l, r: in mpi) return mpi;
    function "*" (l, r: in mpi) return mpi;
    function "/" (l, r: in mpi) return mpi;
+   function square(n : in mpi) return mpi;
    function absolute (n: in mpi) return mpi;
    function modulo (l, r: in mpi) return mpi;
 
@@ -57,9 +58,9 @@ package bignum is
    type limbs_access is access limbs;
 
    type mpi is new Ada.Finalization.Controlled with record
-      sign: boolean;
+      sign : boolean;
       ends : integer; -- the last none zero limb
-      data: limbs_access;
+      data : limbs_access;
    end record;
    overriding
    procedure initialize (n: in out mpi);

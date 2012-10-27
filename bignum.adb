@@ -7,6 +7,12 @@ package body bignum is
    slot_size : constant := 2_000_000_000;
    hex_string : string(1..16) := "0123456789ABCDEF";
 
+   procedure debug(s: string) is begin ada.text_io.put_line(s); end debug;
+
+   package limb_io is new ada.text_io.modular_io(num=>limb);
+
+   function norm_cmp (l, r : in mpi) return boolean;
+
    procedure free is new ada.unchecked_deallocation(object=>limbs,name=>limbs_access);
 
    -- constructors
@@ -42,13 +48,9 @@ package body bignum is
       if n.data = null then
          n.data := new limbs(1..l);
 
-         if n.data = null then
-            raise oom;
-         end if;
-
-         n.data(1) := 0;
-         n.ends := 1;
-         return;
+         if n.data = null then raise oom; end if;
+         n.data(1..l) := (others =>0);
+         n.ends := 0;
       elsif n.data'length < l then
          new_data := new limbs(1..l);
          new_data(n.data'range) := n.data.all;
@@ -68,11 +70,6 @@ package body bignum is
       end loop;
    end remove_leading_zeroes;
 
-   procedure debug(s: string) is begin ada.text_io.put_line(s); end debug;
-
-   package limb_io is new ada.text_io.modular_io(num=>limb);
-
-   function norm_cmp (l, r : in mpi) return boolean;
 
    function character_to_integer(c : in character) return integer is
    begin
@@ -358,8 +355,31 @@ package body bignum is
    end "-";
 
    function "*" (l, r: in mpi) return mpi is
+      prod : interfaces.unsigned_64;
+      carry : interfaces.unsigned_64 := 0;
+      data : limbs_access;
+      ends : integer;
    begin
-      return null_mpi;
+      data := new limbs(1..l.ends+r.ends+1);
+      if data = null then raise oom; end if;
+      for i in 1..l.ends loop
+         for j in 1..r.ends loop
+            prod := carry +
+            interfaces.unsigned_64(l.data(i)) *
+            interfaces.unsigned_64(r.data(j));
+            data(i+j-1) := limb(prod mod 2**32);
+            carry := prod / 2**32;
+         end loop;
+      end loop;
+      data(l.ends+r.ends+1) := limb(carry);
+      for i in reverse data'range loop
+         if data(i) /= 0 then
+            ends := i;
+            exit;
+         end if;
+      end loop;
+      return (Ada.Finalization.Controlled
+      with sign=> (l.sign and r.sign), ends=>ends,data=>data);
    end "*";
 
    function "/" (l, r: in mpi) return mpi is
@@ -367,6 +387,39 @@ package body bignum is
       return null_mpi;
    end "/";
 
+   function square(n : in mpi) return mpi is
+      prod : interfaces.unsigned_64;
+      carry : interfaces.unsigned_64 := 0;
+      data : limbs_access;
+      ends : integer;
+   begin
+      data := new limbs(1..n.ends*2);
+      if data = null then raise oom; end if;
+      for i in 1..n.ends loop
+         prod := carry +
+         interfaces.unsigned_64(n.data(i)) *
+         interfaces.unsigned_64(n.data(i));
+         data(i*2-1) := limb(prod mod 2**32);
+         carry := prod / 2**32;
+         for j in i+1..n.ends loop
+            prod := carry +
+            interfaces.unsigned_64(data(i+j-1)) +
+            interfaces.unsigned_64(n.data(i)) *
+            interfaces.unsigned_64(n.data(j)) * 2;
+            data(i+j-1) := limb(prod mod 2**32);
+            carry := prod / 2**32;
+         end loop;
+         data(i + n.ends) := limb(carry);
+      end loop;
+      for i in reverse data'range loop
+         if data(i) /= 0 then
+            ends := i;
+            exit;
+         end if;
+      end loop;
+      return (Ada.Finalization.Controlled
+      with sign=> true, ends=>ends,data=>data);
+   end square;
    function absolute (n: in mpi) return mpi is
    begin
       return null_mpi;
@@ -476,7 +529,7 @@ package body bignum is
          if l.data(l.ends) /= 0 then
             return true;
          else
-            --  in case of l.data(l.ends) = 0, but rare
+            --  in rare case of l.data(l.ends) = 0
             declare
                ll : mpi := l;
             begin
