@@ -130,7 +130,7 @@ package body bignum is
       end loop;
 
       -- Note: A limb can hold 8 hexadecimals
-      l := (ss'length-1) / 8 + 1;
+      l := (ss'length-1)/8+1;
       o := ss'length mod 8;
       grow(n,l);
 
@@ -147,13 +147,14 @@ package body bignum is
       return n;
    end from_string;
 
-   procedure put(n : in mpi; r : in integer) is
+   procedure put(n : in mpi; r : in integer := 16) is
    begin
       if n.sign then
          ada.text_io.put("[");
       else
          ada.text_io.put("[-");
       end if;
+      -- r := 16
       ada.text_io.put(to_string(n, 16)&"]");
    end put;
 
@@ -210,8 +211,7 @@ package body bignum is
          n.sign := true;
       end if;
 
-      n.data := new limbs(1..1);
-      n.data(1) := limb(v);
+      n.data := new limbs'(1..1=>limb(v));
       n.ends := 1;
       return n;
    end from_integer;
@@ -225,15 +225,14 @@ package body bignum is
       if l.ends < r.ends then
          return sum(r,l);
       else
-         n := new limbs(1..l.ends+1);
+         n := new limbs'(1..(l.ends+1) => 0);
          if n = null then raise oom; end if;
-         n.all := (others =>0);
 
          for i in r.data'range loop
-            n(i) := l.data(i) + r.data(i) + carry;
+            n(i) := l.data(i)+r.data(i)+carry;
 
-            if 16#ffffffff# - l.data(i) - carry >= r.data(i) or
-               16#ffffffff# - r.data(i) - carry >= l.data(i) then
+            if 16#ffffffff#-l.data(i)-carry >= r.data(i) or
+               16#ffffffff#-r.data(i)-carry >= l.data(i) then
                carry := 0;
             else
                carry := 1;
@@ -242,8 +241,8 @@ package body bignum is
 
          if l.ends > r.ends then
 
-            for i in r.ends + 1 .. l.ends loop  
-               n(i) := l.data(i) + carry;
+            for i in (r.ends+1)..l.ends loop
+               n(i) := l.data(i)+carry;
                carry := (if n(i) < l.data(i) then 1 else 0);
             end loop;
 
@@ -275,10 +274,10 @@ package body bignum is
             sub_loop:
             for i in l.data'first .. l.ends loop
                if i > r.ends then
-                  n(i) := l.data(i) - carry;
+                  n(i) := l.data(i)-carry;
                   carry := (if l.data(i) >=  carry then 0 else 1);
                else
-                  n(i) := l.data(i) - r.data(i) - carry;
+                  n(i) := l.data(i)-r.data(i)-carry;
                   carry := (if l.data(i) >= r.data(i) +  carry then 0 else 1);
                end if;
             end loop sub_loop;
@@ -349,20 +348,18 @@ package body bignum is
             return n;
          end if;
       end loop;
-
       n.ends := n.data'first;
       return n;
    end "-";
-
+   -- TODO Karatsuba_algorithm and Montgomery_reduction for big mpi
    function "*" (l, r: in mpi) return mpi is
       prod : interfaces.unsigned_64;
       carry : interfaces.unsigned_64;
       data : limbs_access;
       ends : integer;
    begin
-      data := new limbs(1..l.ends+r.ends);
+      data := new limbs'(1..l.ends+r.ends => 0);
       if data = null then raise oom; end if;
-      data.all := (others=>0);
       for i in 1..l.ends loop
          carry := 0;
          for j in 1..r.ends loop
@@ -385,10 +382,28 @@ package body bignum is
       return (Ada.Finalization.Controlled
       with sign=> (l.sign and r.sign), ends=>ends,data=>data);
    end "*";
-
+   -- TODO
    function "/" (l, r: in mpi) return mpi is
+      quotient : limbs_access;
+      remainder : limbs_access;
    begin
-      return null_mpi;
+      if r > l then
+         -- FIXME
+         return (Ada.Finalization.Controlled
+         with sign=> true, ends => 1,data=> new limbs'(1..1 => 0));
+      elsif l = r then
+         return (Ada.Finalization.Controlled
+         with sign=> true, ends => 1,data=> new limbs'(1..1 => 1));
+      else
+         quotient := new limbs'(1..(l.ends-r.ends) => 0);
+         remainder := new limbs'(1..r.ends => 0);
+         if quotient = null or remainder = null then raise oom; end if;
+         --while x > r * limb  loop
+         --null;
+         --end loop
+         return (Ada.Finalization.Controlled
+         with sign=> true, ends => 1,data=> new limbs'(1..1 => 1));
+      end if;
    end "/";
 
    function square(n : in mpi) return mpi is
@@ -397,16 +412,15 @@ package body bignum is
       data : limbs_access;
       ends : integer;
    begin
-      data := new limbs(1..n.ends*2);
+      data := new limbs'(1..n.ends*2 => 0);
       if data = null then raise oom; end if;
-      data.all := (others=>0);
       for i in 1..n.ends loop
          prod := carry +
          interfaces.unsigned_64(n.data(i)) *
          interfaces.unsigned_64(n.data(i));
          data(i*2-1) := limb(prod mod 2**32);
          carry := prod / 2**32;
-         for j in i+1..n.ends loop
+         for j in (i+1)..n.ends loop
             prod := carry +
             interfaces.unsigned_64(data(i+j-1)) +
             interfaces.unsigned_64(n.data(i)) *

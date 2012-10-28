@@ -45,7 +45,7 @@ package bignum is
    function "=" (l, r: in mpi) return boolean;
    function ">" (l, r: in mpi) return boolean;
    function to_string(n : in mpi; r : in integer) return string;
-   procedure put(n : in mpi; r : in integer);
+   procedure put(n : in mpi; r : in integer :=16);
    oom : exception;
    bad_input: exception;
    -------------
