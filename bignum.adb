@@ -1,10 +1,12 @@
 with ada.unchecked_deallocation;
 with ada.characters.handling;
+with ada.numerics.discrete_random;
 with ada.text_io;
 package body bignum is
    use interfaces;
+   string_align : constant := limb'size/4;
    mul_base_digits : constant := 80;
-   slot_size : constant := 2_000_000_000;
+   slot_size : constant := 16;
    hex_string : string(1..16) := "0123456789ABCDEF";
 
    procedure debug(s: string) is begin ada.text_io.put_line(s); end debug;
@@ -42,12 +44,12 @@ package body bignum is
       end if;
    end finalize;
 
+   -- Allocate memory
    procedure grow(n : in out mpi; l : in integer) is
       new_data : limbs_access;
    begin
       if n.data = null then
          n.data := new limbs(1..l);
-
          if n.data = null then raise oom; end if;
          n.data(1..l) := (others =>0);
          n.ends := 0;
@@ -60,6 +62,7 @@ package body bignum is
       end if;
    end grow;
 
+   -- Adjust ends
    procedure remove_leading_zeroes(n: in out mpi) is
    begin
       for i in reverse 1..n.ends loop
@@ -88,14 +91,9 @@ package body bignum is
    function string_2_limb (s : in string; f, t: integer; b: in limb := 16) return limb is
       li :limb := 0;
    begin
-      -- if t - f > 8 or t > s'last or f < s'first then
-      --   raise bad_input;
-      -- end if;
-
       for i in f..t loop
          li := li*b+limb(character_to_integer(s(i)));
       end loop;
-
       return li;
    end string_2_limb;
 
@@ -111,34 +109,40 @@ package body bignum is
       n : mpi;
       l : integer;
       ss : string(s'range);
-      o : integer;
+      off_set : integer;
    begin
       -- verify s
       -- FIXME raise exception if s contains other characters
+      if s(i) = '+' then
+      o := 1;
+         n.sign := true;
+      elsif s(i) := '-' then
+         o := 1;
+         n.sign := false
+      else
+         o := 0
+      end if;
       for i in  s'Range loop
          case s(i) is
             when '0'..'9' | 'a'..'f' =>
                ss(i) := s(i);
             when 'A'..'F' =>
                ss(i) := ada.characters.handling.to_lower (s(i));
-               -- FIXME 
-               -- when '_' => -- ignore all '_'
-               --   null;
             when others =>
                ss(i) := '0';
          end case;
       end loop;
 
-      -- Note: A limb can hold 8 hexadecimals
-      l := (ss'length-1)/8+1;
-      o := ss'length mod 8;
+      -- Note: A limb can hold string_align hexadecimals
+      l := (ss'length-1)/string_align+1;
+      o := ss'length mod string_align;
       grow(n,l);
 
       for i in n.data'range loop
          if i = n.data'last and o /= 0 then -- get first `o' characters
             n.data(i) := string_2_limb(ss,1,o,16);
          else
-            n.data(i) := string_2_limb(ss,ss'last+1-8*i, ss'last-i*8+7,16);
+            n.data(i) := string_2_limb(ss,ss'last+1-string_align*i, ss'last-i*string_align+string_align-1,16);
          end if;
       end loop;
 
@@ -149,19 +153,17 @@ package body bignum is
 
    procedure put(n : in mpi; r : in integer := 16) is
    begin
-      if n.sign then
-         ada.text_io.put("[");
-      else
-         ada.text_io.put("[-");
+      if not n.sign then
+         ada.text_io.put("-");
       end if;
       -- r := 16
-      ada.text_io.put(to_string(n, 16)&"]");
+      ada.text_io.put(to_string(n, 16));
    end put;
 
    function to_string(n : in mpi; r : in integer) return string is
       t : limb;
       z : integer := 0;
-      s1 : string(1..8);
+      s1 : string(1..string_align);
    begin
       if n.data = null then
          return "null";
@@ -170,10 +172,10 @@ package body bignum is
       t := n.data(n.ends);
 
       last_limb:
-      for i in 1..8 loop
+      for i in 1..string_align loop
          exit last_limb when t = 0;
          z := z + 1;
-         s1(9-z) := hex_string(integer(t mod 16)+1);
+         s1(string_align+1-z) := hex_string(integer(t mod 16)+1);
          t := t / 16;
       end loop last_limb;
 
@@ -182,17 +184,17 @@ package body bignum is
       end if;
 
       declare
-         s : string(1..8*(n.ends-1)+z);
+         s : string(1..string_align*(n.ends-1)+z);
       begin
-         s(1..z) := s1(9-z..8);
+         s(1..z) := s1(string_align+1-z..string_align);
          rest_limbs:
 
          for i in n.data'first .. (n.ends-1) loop
             t := n.data(i);
 
             read_limb:
-            for j in 1..8 loop
-               s((n.ends-i)*8+1+z-j) := hex_string(integer(t mod 16)+1);
+            for j in 1..string_align loop
+               s((n.ends-i)*string_align+1+z-j) := hex_string(integer(t mod 16)+1);
                t := t / 16;
             end loop read_limb;
 
@@ -478,8 +480,15 @@ package body bignum is
    end set_as;
 
    procedure randomize(n : in out mpi) is
+      package random_limb is new ada.numerics.discrete_random (limb);
+      use random_limb;
+      g : generator;
    begin
-      null;
+      reset (g);
+      for i in n.data'range loop
+         n.data(i) := random(g);
+      end loop;
+      n.ends := n.data'last;
    end randomize;
    ---- bit ops
    procedure shift_l(n : in out mpi; c : integer) is

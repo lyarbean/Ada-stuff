@@ -10,10 +10,12 @@ procedure test.bignum is
    procedure  do_sub is separate;
    procedure  do_mul is separate;
    procedure  do_square is separate;
+   procedure  do_random is separate;
 begin
    do_put;
    do_add;
    do_sub;
    do_mul;
    do_square;
+   do_random;
 end test.bignum;

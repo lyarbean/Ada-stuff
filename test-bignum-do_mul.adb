@@ -15,7 +15,7 @@ begin
       n : mpi;
    begin
       n:= from_integer(1);
-      for i in reverse 1..1000 loop
+      for i in reverse 1..10000 loop
          n := n*from_integer(i);
       end loop;
       put(n);

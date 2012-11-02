@@ -6,7 +6,7 @@ package bignum is
    type mpi is new ada.finalization.controlled with  private;
    -- pre-allocate
    procedure grow(n : in out mpi; l : in integer);
-   procedure remove_leading_zeroes(n: in out mpi);
+   procedure remove_leading_zeroes(n: in out mpi) with inline;
    -- constructors
    function from_string(s : in string; base : in integer := 16)  return mpi;
    function from_integer(v : in integer) return mpi;
