@@ -1,0 +1,214 @@
+with interfaces;
+with System;
+with ada.finalization;
+with Ada.Unchecked_Conversion;
+
+package bson is
+  -- enumerate bsontypes
+  -- append _kind to avoid keyword conflict
+  subtype element_kind is interfaces.unsigned_8;
+  float_kind     : constant element_kind := 16#1#;
+  string_kind    : constant element_kind := 16#2#;
+  document_kind  : constant element_kind := 16#3#;
+  array_kind     : constant element_kind := 16#4#;
+  binary_kind    : constant element_kind := 16#5#;
+  undefined_kind : constant element_kind := 16#6#;
+  objectid_kind  : constant element_kind := 16#7#;
+  boolean_kind   : constant element_kind := 16#8#;
+  datetime_kind  : constant element_kind := 16#9#;
+  null_kind      : constant element_kind := 16#a#;
+  rexp_kind      : constant element_kind := 16#b#;
+  dbpointer_kind : constant element_kind := 16#c#;
+  jscode_kind    : constant element_kind := 16#d#;
+  symbol_kind    : constant element_kind := 16#e#;
+  jsscope_kind   : constant element_kind := 16#f#;
+  int32_kind     : constant element_kind := 16#10#;
+  timestamp_kind : constant element_kind := 16#11#;
+  int64_kind     : constant element_kind := 16#12#;
+  keymin_kind    : constant element_kind := 16#ff#;
+  keymax_kind    : constant element_kind := 16#7f#;
+
+  -- append _sub to avoid keyword conflict
+  subtype sub_kind is interfaces.unsigned_8 range 16#0#..16#80#;
+  generic_sub    : constant sub_kind := 16#0#;
+  function_sub   : constant sub_kind := 16#1#;
+  binary_oid_sub : constant sub_kind := 16#2#;
+  uuid_oid_sub   : constant sub_kind := 16#3#;
+  uuid_sub       : constant sub_kind := 16#4#;
+  md5_sub        : constant sub_kind := 16#5#;
+  user_sub       : constant sub_kind := 16#80#;
+
+  --------------
+  -- Document --
+  --------------
+  type document is new ada.finalization.controlled with private;
+  ---------------
+  -- Iteractor --
+  ---------------
+  type iteractor is private;
+  function  head(d : aliased document) return iteractor;
+  function  tail(d : aliased document) return iteractor;
+
+  -- procedure append(d : document; );
+  --   function get_filed(obj:document;name:string) return element;
+  --   function get_filed_dotted(obj:document;name:string) return element;
+  --   function get_fileds_dotted(obj:document;name:string) return element_array;
+  --   function has_filed(name:string) return bool;
+  --   function has_element(name:string) return bool;
+
+  -- package oid
+  --   function gen_oid();
+  type document_access is access all document;
+
+  bad_doc: exception;
+  private
+  type iteractor is record
+    from : integer := 0;
+    to   : integer := 0;
+    doc  : document_access := null;
+  end record;
+
+  type opaque is array (positive range <>) of interfaces.unsigned_8;
+  pragma pack (opaque);
+  type opaque_access is access opaque;
+
+  type document is new ada.finalization.controlled with record
+    bytes : opaque_access;
+    used : integer;
+  end record;
+
+  overriding
+  procedure initialize(o : in out document);
+  overriding
+  procedure adjust(o : in out document);
+  overriding
+  procedure finalize(o : in out document);
+end bson;
+
+with interfaces;
+use interfaces;
+with ada.unchecked_deallocation;
+package body bson is
+
+  subtype u_8  is unsigned_8;
+  subtype u_32 is unsigned_32;
+  subtype u_64 is unsigned_64;
+  subtype Octets_2 is opaque(1..2);
+  subtype Octets_4 is opaque(1..4);
+  subtype Octets_8 is opaque(1..8);
+  function as_integer is new Ada.Unchecked_Conversion (octets_4, integer);
+  function from_integer is new Ada.Unchecked_Conversion ( integer,octets_4);
+  function as_long_integer is new Ada.Unchecked_Conversion (octets_8, long_integer);
+  function from_long_integer is new Ada.Unchecked_Conversion (long_integer, octets_8);
+  function as_double is new Ada.Unchecked_Conversion (octets_8, long_float);
+  function from_double is new Ada.Unchecked_Conversion (long_float, octets_8);
+
+
+  function head(d : aliased document) return iteractor is
+  begin
+    -- an element has two bytes at least
+    -- kind & e_name, e.g. null value without e_name
+
+    if d.used > 2 then
+      declare
+        length : integer;
+        sublen : integer;
+        -- skip one byte for element type
+      begin
+        length := 0;
+        -- count e_name'length + kind
+
+        count_cstring:
+        for i in 2..d.used loop
+          if d.bytes(i) = 0 then
+            length := i;
+            exit count_cstring;
+          end if;
+        end loop count_cstring;
+
+        if length = 0 then
+          raise bad_doc;
+        end if;
+
+        case element_kind(d.bytes(1)) is
+
+          when float_kind =>
+            length := length + 4;
+          when string_kind =>
+            -- int32 (byte*) "\x00"
+            if d.used < length + 5 then
+              raise bad_doc;
+            end if;
+            -- convert bytes(length+1..lenght+4) to integer
+            sublen := as_integer(d.bytes(length+1..length+4));
+            return iteractor'(from=>d.used,to=>d.used,doc=> d'access);
+            --          when document_kind  ;
+            --          when array_kind     ;
+            --          when binary_kind    ;
+            --          when undefined_kind ;
+            --          when objectid_kind  ;
+            --          when boolean_kind   ;
+            --          when datetime_kind  
+            --          when null_kind      
+            --          when rexp_kind      
+            --          when dbpointer_kind 
+            --          when jscode_kind    
+            --          when symbol_kind    
+            --          when jsscope_kind  ;
+            --          when int32_kind    ;
+            --          when timestamp_kind 
+            --          when int64_kind    ;
+            --          when keymin_kind   ;
+            --          when keymax_kind   ;
+          when others => 
+            raise bad_doc;
+        end case;
+
+        if length > d.used then
+          raise bad_doc;
+        end if;
+      end;
+    end if;
+
+    return tail(d);
+  end head;
+
+  function  tail(d : aliased document) return iteractor is
+  begin
+    return iteractor'(from=>d.used,to=>d.used,doc=> d'access);
+  end tail;
+  -- procedure append(d : document;);
+  --   function get_filed(obj:document;name:string) return element;
+  --   function get_filed_dotted(obj:document;name:string) return element;
+  --   function get_fileds_dotted(obj:document;name:string) return element_array;
+  --   function has_filed(name:string) return bool;
+  --   function has_element(name:string) return bool;
+
+  -- package oid
+  --   function gen_oid();
+
+  ----------------------------------------------------------------------
+  -- 
+  ----------------------------------------------------------------------
+  procedure initialize(o : in out document) is
+  begin
+    o.bytes := new opaque(1..1024);
+    o.used  := 0;
+  end initialize;
+
+  -- deep copy
+  procedure adjust(o : in out document) is
+    ref : opaque_access := o.bytes;
+  begin
+    o.bytes := new opaque(ref'range);
+    o.bytes.all := ref.all;
+  end adjust;
+
+  procedure finalize(o : in out document) is
+    procedure free is new ada.unchecked_deallocation(opaque,opaque_access);
+  begin
+    if o.bytes /= null then
+      free(o.bytes);
+    end if;
+  end finalize;
+end bson;
