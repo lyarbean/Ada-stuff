@@ -1,12 +1,26 @@
 with interfaces;
-with System;
-with ada.finalization;
-with Ada.Unchecked_Conversion;
+with ada.Unchecked_Conversion;
 
 package bson is
+  pragma pure;
+  --pragma elaborate_body;
+  subtype u_8  is interfaces.unsigned_8;
+  subtype u_32 is interfaces.unsigned_32;
+  subtype u_64 is interfaces.unsigned_64;
+  type octets is array (positive range <>) of u_8;
+  pragma pack (octets);
+  subtype octets_2 is octets(1..2);
+  subtype octets_4 is octets(1..4);
+  subtype octets_8 is octets(1..8);
+  function as_integer is new ada.Unchecked_Conversion (octets_4, integer);
+  function from_integer is new ada.Unchecked_Conversion ( integer,octets_4);
+  function as_long_integer is new ada.Unchecked_Conversion (octets_8, long_integer);
+  function from_long_integer is new ada.Unchecked_Conversion (long_integer, octets_8);
+  function as_double is new ada.Unchecked_Conversion (octets_8, long_float);
+  function from_double is new ada.Unchecked_Conversion (long_float, octets_8);
   -- enumerate bsontypes
   -- append _kind to avoid keyword conflict
-  subtype element_kind is interfaces.unsigned_8;
+  subtype element_kind is u_8;
   float_kind     : constant element_kind := 16#1#;
   string_kind    : constant element_kind := 16#2#;
   document_kind  : constant element_kind := 16#3#;
@@ -29,7 +43,7 @@ package bson is
   keymax_kind    : constant element_kind := 16#7f#;
 
   -- append _sub to avoid keyword conflict
-  subtype sub_kind is interfaces.unsigned_8 range 16#0#..16#80#;
+  subtype sub_kind is u_8 range 16#0#..16#80#;
   generic_sub    : constant sub_kind := 16#0#;
   function_sub   : constant sub_kind := 16#1#;
   binary_oid_sub : constant sub_kind := 16#2#;
@@ -37,25 +51,26 @@ package bson is
   uuid_sub       : constant sub_kind := 16#4#;
   md5_sub        : constant sub_kind := 16#5#;
   user_sub       : constant sub_kind := 16#80#;
+end bson;
 
-  --------------
-  -- Document --
-  --------------
-  type document is new ada.finalization.controlled with private;
+with ada.finalization;
+package bson.document is
   ---------------
   -- Iteractor --
   ---------------
   type iteractor is private;
-  function  head(d : aliased document) return iteractor;
-  function  tail(d : aliased document) return iteractor;
-
+  --------------
+  -- Document --
+  --------------
+  type document is new ada.finalization.controlled with private;
+  function  head(d : access document) return iteractor;
+  function  tail(d : access document) return iteractor;
   -- procedure append(d : document; );
   --   function get_filed(obj:document;name:string) return element;
   --   function get_filed_dotted(obj:document;name:string) return element;
   --   function get_fileds_dotted(obj:document;name:string) return element_array;
   --   function has_filed(name:string) return bool;
   --   function has_element(name:string) return bool;
-
   -- package oid
   --   function gen_oid();
   type document_access is access all document;
@@ -65,15 +80,11 @@ package bson is
   type iteractor is record
     from : integer := 0;
     to   : integer := 0;
-    doc  : document_access := null;
+    doc  : access document := null;
   end record;
-
-  type opaque is array (positive range <>) of interfaces.unsigned_8;
-  pragma pack (opaque);
-  type opaque_access is access opaque;
-
+  type octets_access is access octets;
   type document is new ada.finalization.controlled with record
-    bytes : opaque_access;
+    bytes : octets_access;
     used : integer;
   end record;
 
@@ -83,32 +94,30 @@ package bson is
   procedure adjust(o : in out document);
   overriding
   procedure finalize(o : in out document);
-end bson;
+end bson.document;
 
 with interfaces;
 use interfaces;
 with ada.unchecked_deallocation;
-package body bson is
+package body bson.document is
+  -- procedure append(d : document;);
+  --   function get_filed(obj:document;name:string) return element;
+  --   function get_filed_dotted(obj:document;name:string) return element;
+  --   function get_fileds_dotted(obj:document;name:string) return element_array;
+  --   function has_filed(name:string) return bool;
+  --   function has_element(name:string) return bool;
 
-  subtype u_8  is unsigned_8;
-  subtype u_32 is unsigned_32;
-  subtype u_64 is unsigned_64;
-  subtype Octets_2 is opaque(1..2);
-  subtype Octets_4 is opaque(1..4);
-  subtype Octets_8 is opaque(1..8);
-  function as_integer is new Ada.Unchecked_Conversion (octets_4, integer);
-  function from_integer is new Ada.Unchecked_Conversion ( integer,octets_4);
-  function as_long_integer is new Ada.Unchecked_Conversion (octets_8, long_integer);
-  function from_long_integer is new Ada.Unchecked_Conversion (long_integer, octets_8);
-  function as_double is new Ada.Unchecked_Conversion (octets_8, long_float);
-  function from_double is new Ada.Unchecked_Conversion (long_float, octets_8);
+  -- package oid
+  --   function gen_oid();
 
-
-  function head(d : aliased document) return iteractor is
+  function tail(d : access document) return iteractor is
+  begin
+    return iteractor'(from=>d.used,to=>d.used,doc=> d);
+  end tail;
+  function head(d : access document) return iteractor is
   begin
     -- an element has two bytes at least
     -- kind & e_name, e.g. null value without e_name
-
     if d.used > 2 then
       declare
         length : integer;
@@ -141,7 +150,7 @@ package body bson is
             end if;
             -- convert bytes(length+1..lenght+4) to integer
             sublen := as_integer(d.bytes(length+1..length+4));
-            return iteractor'(from=>d.used,to=>d.used,doc=> d'access);
+            return iteractor'(from=>d.used,to=>d.used,doc=> d);
             --          when document_kind  ;
             --          when array_kind     ;
             --          when binary_kind    ;
@@ -169,46 +178,44 @@ package body bson is
         end if;
       end;
     end if;
-
     return tail(d);
   end head;
-
-  function  tail(d : aliased document) return iteractor is
-  begin
-    return iteractor'(from=>d.used,to=>d.used,doc=> d'access);
-  end tail;
-  -- procedure append(d : document;);
-  --   function get_filed(obj:document;name:string) return element;
-  --   function get_filed_dotted(obj:document;name:string) return element;
-  --   function get_fileds_dotted(obj:document;name:string) return element_array;
-  --   function has_filed(name:string) return bool;
-  --   function has_element(name:string) return bool;
-
-  -- package oid
-  --   function gen_oid();
-
   ----------------------------------------------------------------------
   -- 
   ----------------------------------------------------------------------
   procedure initialize(o : in out document) is
   begin
-    o.bytes := new opaque(1..1024);
+    o.bytes := new octets(1..1024);
     o.used  := 0;
   end initialize;
 
   -- deep copy
   procedure adjust(o : in out document) is
-    ref : opaque_access := o.bytes;
+    ref : constant octets_access := o.bytes;
   begin
-    o.bytes := new opaque(ref'range);
+    o.bytes := new octets(ref'range);
     o.bytes.all := ref.all;
   end adjust;
 
   procedure finalize(o : in out document) is
-    procedure free is new ada.unchecked_deallocation(opaque,opaque_access);
+    procedure free is new ada.unchecked_deallocation(octets,octets_access);
   begin
     if o.bytes /= null then
       free(o.bytes);
     end if;
   end finalize;
-end bson;
+end bson.document;
+-- TEST --
+with bson.document;
+use bson.document;
+-- with ada.text_io;
+-- use ada.text_io;
+procedure bson_test is
+  a : document;
+  h : iteractor;
+begin
+ -- h := a.head;
+ -- h := a.tail;
+  delay 10.0;
+end bson_test;
+
